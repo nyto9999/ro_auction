@@ -1,10 +1,11 @@
 name: 📊 Market Chart Daily Update
 
-# 設定觸發器：每小時的 30 分鐘 (例如 01:30, 02:30, ...) 執行
+# 設定觸發器：每小時的 5 分鐘 (例如 01:05, 02:05, ...) 執行
 on:
   schedule:
-    # 這是 UTC 時間，請自行轉換：'30 * * * *' 代表每小時的第 30 分鐘
-    - cron: '30 * * * *' 
+    # CRON 語法：'5 * * * *' 代表在每個小時的第 5 分鐘執行 (UTC 時間)
+    - cron: '5 * * * *'
+      
   # 允許手動觸發，方便測試
   workflow_dispatch:
 
@@ -33,7 +34,7 @@ jobs:
         run: |
           # 根據您的環境，可能需要安裝 requirements.txt 中的所有依賴
           # 假設您只需要 pandas, plotly
-          pip install pandas plotly numpy
+          pip install pandas plotly numpy undetected-chromedriver selenium
 
       # 4. 運行 Python 腳本並生成 HTML 文件
       - name: 📊 Run Python script to generate HTML
@@ -46,7 +47,6 @@ jobs:
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           # 告訴它要提交哪個檔案 (神之金屬_市場分析.html)
-          # 注意：這裡假設您的 plot.py 輸出的檔案名稱就是這個
           file_pattern: '神之金屬_市場分析.html' 
           commit_message: "Auto-update: Market chart for 神之金屬 [skip ci]"
           # [skip ci] 確保這次 commit 不會再次觸發這個 workflow，避免無限循環
