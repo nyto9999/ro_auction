@@ -112,7 +112,7 @@ def plot_combined_trends_plotly(summary_df, item_name):
         subplot_titles=(
             f'【收購】價格趨勢 (含歷史平均價格)', # <-- 標題更新
             f'【販售】價格趨勢 (含歷史平均價格)', # <-- 標題更新
-            '小時【交易量】趨勢 (收購/販售堆疊)' 
+            '【交易量】趨勢 (收購/販售堆疊)' 
         ),
         specs=[
             [{"secondary_y": False}], 
@@ -253,12 +253,12 @@ def plot_combined_trends_plotly(summary_df, item_name):
     fig.update_layout(
         template='plotly_white', 
         font=dict(family="Arial, sans-serif", size=12, color="black"),
-        title_text=f'**{item_name}** 市場分析趨勢 (價格區間 & 歷史平均價格)',
+        title_text=f'{item_name} 每小時更新',
         title_x=0.5,
         height=900, 
         hovermode="x unified",
         margin=dict(r=100, l=80, b=100), 
-        xaxis3={**time_controls, **dict(showticklabels=True, fixedrange=False, showgrid=False, title_text='時間 (小時)')},
+        xaxis3={**time_controls, **dict(showticklabels=True, fixedrange=False, showgrid=False, title_text='時間軸滑軌')},
         xaxis1=dict(matches='x3', showticklabels=False, fixedrange=False, showgrid=False),
         xaxis2=dict(matches='x3', showticklabels=False, fixedrange=False, showgrid=False),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5),
