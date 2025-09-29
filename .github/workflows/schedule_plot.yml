@@ -1,0 +1,52 @@
+name: 📊 Market Chart Daily Update
+
+# 設定觸發器：每小時的 30 分鐘 (例如 01:30, 02:30, ...) 執行
+on:
+  schedule:
+    # 這是 UTC 時間，請自行轉換：'30 * * * *' 代表每小時的第 30 分鐘
+    - cron: '30 * * * *' 
+  # 允許手動觸發，方便測試
+  workflow_dispatch:
+
+# 授予 GITHUB_TOKEN 寫入權限，以便提交新的 HTML 文件
+permissions:
+  contents: write
+
+jobs:
+  update_and_deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Checkout 程式碼
+      - name: ⬇️ Checkout repository code
+        # 使用 v4 版本，它支援 GITHUB_TOKEN 的權限
+        uses: actions/checkout@v4
+
+      # 2. 設定 Python 環境
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x' # 使用您需要的 Python 版本
+
+      # 3. 安裝 Python 依賴
+      - name: ⚙️ Install dependencies
+        run: |
+          # 根據您的環境，可能需要安裝 requirements.txt 中的所有依賴
+          # 假設您只需要 pandas, plotly
+          pip install pandas plotly numpy
+
+      # 4. 運行 Python 腳本並生成 HTML 文件
+      - name: 📊 Run Python script to generate HTML
+        # 執行您的 plot.py 檔案
+        run: python plot.py
+
+      # 5. 自動提交並推送變動 (HTML 文件)
+      # 使用一個專門的 Action 來處理 git add/commit/push 邏輯
+      - name: ⬆️ Commit and Push new HTML
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          # 告訴它要提交哪個檔案 (神之金屬_市場分析.html)
+          # 注意：這裡假設您的 plot.py 輸出的檔案名稱就是這個
+          file_pattern: '神之金屬_市場分析.html' 
+          commit_message: "Auto-update: Market chart for 神之金屬 [skip ci]"
+          # [skip ci] 確保這次 commit 不會再次觸發這個 workflow，避免無限循環
