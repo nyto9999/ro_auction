@@ -1,0 +1,260 @@
+import pandas as pd
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import os
+import numpy as np 
+from datetime import timedelta
+
+# --- 1. 配置與數據載入 (與上次相同) ---
+
+CSV_FILE = "神之金屬.csv"
+ITEM_NAME_TO_PLOT = "神之金屬" 
+DATE_FORMAT = '%Y-%m-%dT%H:%M:%S.%f' 
+
+def load_and_preprocess_data(file_path):
+    """載入 CSV 檔案，清理數據並進行預處理。"""
+    if not os.path.exists(file_path):
+        print(f"錯誤: 找不到檔案 {file_path}。使用模擬數據進行示範。")
+        data = {
+            'timestamp': [
+                (pd.to_datetime('2025-09-25 00:00:00') + timedelta(hours=i)).strftime(DATE_FORMAT) 
+                for i in range(1, 100)] + [(pd.to_datetime('2025-09-25 00:00:00') + timedelta(hours=i)).strftime(DATE_FORMAT) for i in range(1, 100)],
+            'item_name': [ITEM_NAME_TO_PLOT] * 198,
+            'trade_type': ['收購', '販售'] * 99,
+            'price': np.random.randint(8000, 15000, 198),
+            'quantity': np.random.randint(5, 300, 198)
+        }
+        df = pd.DataFrame(data)
+    else:
+        try:
+            df = pd.read_csv(file_path, dtype={'timestamp': str})
+        except Exception as e:
+            print(f"錯誤: 讀取 CSV 檔案時發生錯誤: {e}")
+            return None
+
+    df = df[df['item_name'] == ITEM_NAME_TO_PLOT].copy()
+    if df.empty:
+        print(f"錯誤: 在檔案中找不到道具【{ITEM_NAME_TO_PLOT}】的數據。")
+        return None
+    
+    try:
+        df['timestamp'] = pd.to_datetime(df['timestamp'], format=DATE_FORMAT)
+    except Exception as e:
+        print(f"錯誤: 時間戳格式不正確，無法解析 ({DATE_FORMAT})。錯誤訊息: {e}")
+        return None
+    
+    df['hour'] = df['timestamp'].dt.to_period('H').dt.to_timestamp()
+    
+    summary_df = generate_summary(df) 
+    
+    return summary_df
+
+def generate_summary(df):
+    """計算小時級別的價格統計、數量，不再計算 MA。"""
+    
+    price_summary = df.groupby(['hour', 'trade_type'])['price'].agg(['min', 'max']).unstack(level='trade_type')
+    price_summary.columns = [f'{agg}_{trade_type}' for agg, trade_type in price_summary.columns]
+    
+    volume_summary = df.groupby(['hour', 'trade_type'])['quantity'].sum().unstack(level='trade_type')
+    volume_summary.columns = [f'volume_{trade_type}' for trade_type in volume_summary.columns]
+    
+    combined_df = price_summary.join(volume_summary, how='outer')
+    
+    if combined_df.empty:
+        return pd.DataFrame()
+
+    combined_df = combined_df.resample('H').asfreq() 
+    
+    required_price_cols = ['min_收購', 'max_收購', 'min_販售', 'max_販售']
+    required_volume_cols = ['volume_收購', 'volume_販售']
+    
+    for col in required_price_cols + required_volume_cols:
+        if col not in combined_df.columns:
+            if 'volume' in col:
+                combined_df[col] = 0
+            else:
+                combined_df[col] = np.nan
+            
+    combined_df[required_volume_cols] = combined_df[required_volume_cols].fillna(0)
+    
+    combined_df[required_price_cols] = combined_df[required_price_cols].ffill()
+    
+    combined_df = combined_df.sort_index()
+    
+    return combined_df
+
+# --- 2. 繪圖邏輯 (移除 MA 功能與按鈕，調整註釋位置) ---
+
+def plot_combined_trends_plotly(summary_df, item_name):
+    """使用 Plotly 繪製三子圖，移除 MA 線和控制按鈕，將 Trace 索引註釋放置在圖表右下方。"""
+    
+    # 創建 3 行 1 列的子圖，共用 X 軸
+    fig = make_subplots(
+        rows=3, cols=1, 
+        shared_xaxes=True, 
+        vertical_spacing=0.1, 
+        subplot_titles=(
+            f'【收購】價格趨勢 (Max Buy Price)', 
+            f'【販售】價格趨勢 (Min Sell Price)',
+            '小時總數量趨勢 (成交量)'
+        ),
+        specs=[[{"secondary_y": False}], [{"secondary_y": False}], [{"secondary_y": False, "rowspan": 1}]]
+    )
+    
+    # ****** 顏色定義 ******
+    COLOR_BUY_MAX = '#2E7D32'      # 深綠
+    COLOR_BUY_MIN = '#66BB6A'      # 淺綠
+    COLOR_SELL_MIN = '#C62828'     # 深紅
+    COLOR_SELL_MAX = '#E57373'     # 淺紅
+    
+    line_config = lambda color, dash: dict(
+        mode='lines', line=dict(color=color, dash=dash, shape='spline', width=3) 
+    )
+    
+    # ====== Trace 索引配置 (精簡後，對應 Trace 0-5) ======
+    TRACE_INDEX_CONFIG = """
+    **Trace 索引配置**
+    
+    **Row 1 (收購價):**
+    0: 收購最高價 (Max Buy)
+    1: 收購最低價 (Min Buy)
+    
+    **Row 2 (販售價):**
+    2: 販售最低價 (Min Sell)
+    3: 販售最高價 (Max Sell)
+    
+    **Row 3 (成交量):**
+    4: 收購數量 (Volume Buy)
+    5: 販售數量 (Volume Sell)
+    """
+    
+    # ----------------------------------------------------
+    # ====== Row 1: 收購價格 (Max Buy Price) ======
+    # ----------------------------------------------------
+    
+    # Trace 0-1: 價格線 (Prices)
+    fig.add_trace(go.Scatter(x=summary_df.index, y=summary_df['max_收購'], name='收購最高價 (Max Buy)', **line_config(COLOR_BUY_MAX, 'solid')), row=1, col=1)
+    fig.add_trace(go.Scatter(x=summary_df.index, y=summary_df['min_收購'], name='收購最低價 (Min Buy)', **line_config(COLOR_BUY_MIN, 'dot')), row=1, col=1) 
+
+    fig.update_yaxes(title_text='收購價格 (Zeny)', row=1, col=1, tickformat=',.0f', fixedrange=False, gridcolor='#E0E0E0', title_font=dict(size=14)) 
+    
+    
+    # ----------------------------------------------------
+    # ====== Row 2: 販售價格 (Min Sell Price) ======
+    # ----------------------------------------------------
+    
+    # Trace 2-3: 價格線 (Prices)
+    fig.add_trace(go.Scatter(x=summary_df.index, y=summary_df['min_販售'], name='販售最低價 (Min Sell)', **line_config(COLOR_SELL_MIN, 'solid')), row=2, col=1)
+    fig.add_trace(go.Scatter(x=summary_df.index, y=summary_df['max_販售'], name='販售最高價 (Max Sell)', **line_config(COLOR_SELL_MAX, 'dot')), row=2, col=1) 
+
+    fig.update_yaxes(title_text='販售價格 (Zeny)', row=2, col=1, tickformat=',.0f', fixedrange=False, gridcolor='#E0E0E0', title_font=dict(size=14))
+    
+    
+    # ----------------------------------------------------
+    # ====== Row 3: 數量堆疊柱狀圖 (Volume) ======
+    # ----------------------------------------------------
+    
+    # Trace 4-5: 數量柱 (Volume Bars)
+    fig.add_trace(go.Bar(
+        x=summary_df.index, y=summary_df['volume_收購'], name='收購數量 (Buy)', marker_color=COLOR_BUY_MAX,
+        hovertemplate='<b>時間:</b> %{x|%m/%d %H:%M}<br><b>收購數量:</b> %{y:,} 個<extra></extra>'), 
+        row=3, col=1) 
+    
+    fig.add_trace(go.Bar(
+        x=summary_df.index, y=summary_df['volume_販售'], name='販售數量 (Sell)', marker_color=COLOR_SELL_MIN,
+        hovertemplate='<b>時間:</b> %{x|%m/%d %H:%M}<br><b>販售數量:</b> %{y:,} 個<extra></extra>'), 
+        row=3, col=1) 
+    
+    fig.update_layout(barmode='stack')
+    
+    fig.update_yaxes(title_text='總數量 (Volume)', row=3, col=1, tickformat=',.0f', fixedrange=True, gridcolor='#E0E0E0', title_font=dict(size=14))
+
+
+    # ----------------------------------------------------
+    # ====== 總體佈局與互動性設置 (Range Selector & Annotation) ======
+    # ----------------------------------------------------
+    
+    # Range Selector/Slider (放在 Row 3 的 X 軸上)
+    time_controls = dict(
+        rangeslider=dict(visible=True, thickness=0.08), 
+        rangeselector=dict(
+            buttons=list([
+                dict(count=1, label="1小時", step="hour", stepmode="backward"), 
+                dict(count=1, label="1天", step="day", stepmode="backward"),
+                dict(count=7, label="7天", step="day", stepmode="backward"),
+                dict(step="all")
+            ])
+        )
+    )
+    
+    # 🌟 調整 Trace 索引註釋位置到右下方 🌟
+    annotations = [
+        dict(
+            text=TRACE_INDEX_CONFIG.strip(),
+            xref="paper", yref="paper",
+            x=1.05, y=0.1, # X=1.05 (右側), Y=0.1 (接近底部)
+            xanchor='left', yanchor='bottom', # 確保文字從左下方開始延伸
+            showarrow=False,
+            align='left',
+            bordercolor='#9C9C9C', borderwidth=1, borderpad=10,
+            bgcolor='#f9f9f9', opacity=0.8,
+            font=dict(size=10, family="Courier New, monospace")
+        )
+    ]
+
+
+    fig.update_layout(
+        template='plotly_white', 
+        font=dict(family="Arial, sans-serif", size=12, color="black"),
+        title_text=f'**{item_name}** 市場分析趨勢 (精簡版 - 無 MA)',
+        title_x=0.5,
+        height=900, 
+        hovermode="x unified",
+        
+        # 調整圖表繪製區域以騰出右側空間給 Annotation
+        margin=dict(r=150), 
+        
+        annotations=annotations, # 加入註釋
+        
+        # **updatemenus (MA 按鈕) 已移除**
+        
+        legend=dict(
+            orientation="h", yanchor="bottom", y=1.0, xanchor="center", x=0.5, traceorder='normal'
+        ),
+        
+        xaxis1=dict(
+            matches='x3', showticklabels=False, fixedrange=True, showgrid=False
+        ),
+        xaxis2=dict(
+            matches='x3', showticklabels=False, fixedrange=True, showgrid=False
+        ),
+        xaxis3={
+            **time_controls, # 放置 Range Selector 和 Slider
+            **dict(
+                showticklabels=True, fixedrange=True, showgrid=False
+            )
+        } 
+    )
+    
+    fig.show()
+
+# --- 3. 主執行流程 (保持不變) ---
+
+def main():
+    """主函式：載入、處理並繪製數據。"""
+    print(f"📊 正在準備繪製【{ITEM_NAME_TO_PLOT}】的 Plotly 互動式趨勢圖 (精簡版)...")
+    
+    summary_df = load_and_preprocess_data(CSV_FILE)
+    
+    if summary_df is None or summary_df.empty:
+        print("警告: 數據為空或處理失敗。")
+        return
+        
+    print(f"✅ 數據處理完成，共有 {len(summary_df)} 個小時的數據點。")
+    
+    plot_combined_trends_plotly(summary_df, ITEM_NAME_TO_PLOT)
+    
+    print("\n🎉 繪圖完成。圖表已精簡，移除所有 MA 線及控制按鈕，並將 Trace 索引移至圖表右下方。")
+
+if __name__ == "__main__":
+    main()
