@@ -500,19 +500,21 @@ def run_hourly_monitoring_cycle(url: str):
     """
     SEARCH_ITEMS = ["鋁", "大嘴鳥卡片", "神之金屬"] 
     
-    # 2. 初始化 Driver & 登入
-    driver = None
-    login_success = False
-    MAX_RETRIES = 2
+    # ... (初始化和重試邏輯) ...
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            # 確保在嘗試登入前先關閉可能的舊 driver
-            if driver:
-                try: driver.quit() 
-                except: pass
-                
+            # ... (清理舊 Driver 邏輯) ...
+            
             print(f"[{time.strftime('%H:%M:%S')}] 🔄 正在初始化新的瀏覽器 Driver...")
+            
+            # 【重要修正】：新增無頭模式和必要的參數
             options = uc.ChromeOptions()
+            options.add_argument('--no-sandbox')         # 消除沙箱模式的權限問題 (Linux 必需)
+            options.add_argument('--headless')           # 強制無頭模式 (避免圖形界面依賴)
+            options.add_argument('--disable-dev-shm-usage') # 解決 Linux 內存問題
+            options.add_argument('--disable-gpu')        # 禁用 GPU 加速
+            
+            # 使用修正後的 options 初始化 Driver
             driver = uc.Chrome(options=options)
             driver.get(url)
             time.sleep(3) 

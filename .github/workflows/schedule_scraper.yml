@@ -37,6 +37,12 @@ jobs:
           # 【重要修正】將版本固定在 3.11，避免 Python 3.12+ 缺少 distutils 模組的錯誤。
           python-version: '3.11' 
 
+      # 【新增步驟】：安裝必要的 Chrome 依賴庫
+      - name: 🌐 Install required Chrome dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libnss3 libgconf-2-4 libasound2 libatk-bridge2.0-0 libgtk-3-0
+          
       # 3. 安裝 Python 依賴
       - name: ⚙️ Install dependencies (Scraper)
         run: |
