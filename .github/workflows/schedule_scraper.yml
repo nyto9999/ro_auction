@@ -46,9 +46,9 @@ jobs:
           pip install undetected-chromedriver selenium
 
       # 4. 運行 Python 爬蟲腳本
-      - name: 🏃 Run main_scraper.py (Single Run)
+      - name: 🏃 Run main.py (Single Run)
         # 由於 main_scraper.py 已經包含 Git 推送邏輯，這裡只需執行它
-        run: python main_scraper.py
+        run: python main.py
         
       # 注意：這裡不需要額外的 git-auto-commit-action，因為 main_scraper.py 
       # 內建的 auto_git_push 函數會處理 CSV 檔案的提交和推送到 main 分支。
