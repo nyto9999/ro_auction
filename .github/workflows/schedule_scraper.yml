@@ -17,10 +17,13 @@ jobs:
   run_scraper:
     runs-on: ubuntu-latest
     
+    # 【修正：新增 Job 超時時間】明確設定最大運行時間為 30 分鐘，以避免內部超時。
+    timeout-minutes: 30 
+    
     # 設定環境變數供 Python 腳本使用
     env:
       AUCTION_USERNAME: ${{ secrets.AUCTION_USERNAME }} # 從 GitHub Secrets 讀取
-      AUCTION_ID: ${{ secrets.AUCTION_ID }}             # 從 GitHub Secrets 讀取
+      AUCTION_ID: ${{ secrets.AUCTION_ID }}             # 從 GitHub Secrets 讀取
 
     steps:
       # 1. Checkout 程式碼
@@ -35,18 +38,24 @@ jobs:
         with:
           python-version: '3.11' 
 
-      # 【修正步驟】：安裝 Chrome 依賴、OpenCV 依賴和 Xvfb
+      # 3. 安裝 Chrome 依賴、OpenCV 依賴和 Xvfb
       - name: 🌐 Install required Chrome dependencies & Xvfb
         run: |
+          echo "Checking system updates..."
           sudo apt-get update
+          
           # 安裝 Xvfb (虛擬顯示緩衝區) 以支援 headless=False
+          echo "Installing Xvfb..."
           sudo apt-get install -y xvfb
-          # 修正 Chrome 依賴庫的名稱 (適用於 Ubuntu 24.04+)
+          
+          # 修正 Chrome 依賴庫的名稱
+          echo "Installing Chrome dependencies (libnss3, etc.)..."
           sudo apt-get install -y libnss3 libasound2t64 libatk-bridge2.0-0 libgtk-3-0
           
-      # 3. 安裝 Python 依賴
+      # 4. 安裝 Python 依賴
       - name: ⚙️ Install dependencies (Scraper)
         run: |
+          echo "Installing Python packages..."
           # 常用工具
           pip install pandas tabulate
           # 核心爬蟲庫
@@ -54,7 +63,7 @@ jobs:
           # 圖像識別所需套件 (OpenCV, Pillow)
           pip install opencv-python Pillow
           
-      # 4. 運行 Python 爬蟲腳本
+      # 5. 運行 Python 爬蟲腳本
       - name: 🏃 Run main.py (Single Run)
         # 使用 xvfb-run 啟動虛擬顯示器，讓 headless=False 能成功運行
         run: xvfb-run --auto-servernum python main.py
