@@ -1,0 +1,54 @@
+name: 🕷️ Hourly RO Scraper
+
+# 設定觸發器：每小時的 0 分鐘執行 (例如 01:00, 02:00, ...) 
+# 注意：這與您繪圖 Action 的 05 分錯開，避免同時推送。
+on:
+  schedule:
+    # CRON 語法：'0 * * * *' 代表在每個小時的 0 分鐘執行 (UTC 時間)
+    - cron: '0 * * * *' 
+      
+  # 允許手動觸發
+  workflow_dispatch:
+
+# 授予 GITHUB_TOKEN 寫入權限，以便提交新的 CSV 文件
+permissions:
+  contents: write
+
+jobs:
+  run_scraper:
+    runs-on: ubuntu-latest
+    
+    # 設定環境變數供 Python 腳本使用
+    env:
+      AUCTION_USERNAME: ${{ secrets.AUCTION_USERNAME }} # 請在 repo settings 中設定
+      AUCTION_ID: ${{ secrets.AUCTION_ID }}             # 請在 repo settings 中設定
+
+    steps:
+      # 1. Checkout 程式碼
+      - name: ⬇️ Checkout repository code
+        uses: actions/checkout@v4
+        with:
+          # 確保 Action 能拉取和推送
+          token: ${{ secrets.GITHUB_TOKEN }} 
+
+      # 2. 設定 Python 環境
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      # 3. 安裝 Python 依賴 (只保留腳本中實際使用的庫)
+      - name: ⚙️ Install dependencies (Scraper)
+        run: |
+          # pandas 用於數據分析，tabulate 用於打印 Markdown 表格
+          pip install pandas tabulate
+          # selenium 和 undetected-chromedriver 用於瀏覽器自動化
+          pip install undetected-chromedriver selenium
+
+      # 4. 運行 Python 爬蟲腳本
+      - name: 🏃 Run main_scraper.py (Single Run)
+        # 由於 main_scraper.py 已經包含 Git 推送邏輯，這裡只需執行它
+        run: python main_scraper.py
+        
+      # 注意：這裡不需要額外的 git-auto-commit-action，因為 main_scraper.py 
+      # 內建的 auto_git_push 函數會處理 CSV 檔案的提交和推送到 main 分支。

@@ -30,11 +30,11 @@ jobs:
           python-version: '3.x' # 使用您需要的 Python 版本
 
       # 3. 安裝 Python 依賴
-      - name: ⚙️ Install dependencies
+      - name: ⚙️ Install dependencies (Scraper)
         run: |
-          # 根據您的環境，可能需要安裝 requirements.txt 中的所有依賴
-          # 假設您只需要 pandas, plotly
-          pip install pandas plotly numpy undetected-chromedriver selenium
+          # 只需要安裝實際用到的庫，保持環境精簡
+          pip install pandas tabulate
+          pip install undetected-chromedriver selenium
 
       # 4. 運行 Python 腳本並生成 HTML 文件
       - name: 📊 Run Python script to generate HTML
