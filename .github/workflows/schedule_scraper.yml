@@ -19,37 +19,40 @@ jobs:
     
     # 設定環境變數供 Python 腳本使用
     env:
-      AUCTION_USERNAME: ${{ secrets.AUCTION_USERNAME }} # 請在 repo settings 中設定
-      AUCTION_ID: ${{ secrets.AUCTION_ID }}             # 請在 repo settings 中設定
+      AUCTION_USERNAME: ${{ secrets.AUCTION_USERNAME }} # 從 GitHub Secrets 讀取
+      AUCTION_ID: ${{ secrets.AUCTION_ID }}             # 從 GitHub Secrets 讀取
 
     steps:
       # 1. Checkout 程式碼
       - name: ⬇️ Checkout repository code
         uses: actions/checkout@v4
         with:
-          # 確保 Action 能拉取和推送
+          # 使用 GITHUB_TOKEN 進行身份驗證，以便後續的 Git Push 操作
           token: ${{ secrets.GITHUB_TOKEN }} 
 
       # 2. 設定 Python 環境
       - name: 🐍 Set up Python
         uses: actions/setup-python@v5
         with:
-          # 【重要修正】將版本固定在 3.11，避免 Python 3.12+ 缺少 distutils 模組的錯誤。
+          # 將版本固定在 3.11，避免與某些爬蟲庫產生相容性問題
           python-version: '3.11' 
 
-      # 【新增步驟】：安裝必要的 Chrome 依賴庫
-      - name: 🌐 Install required Chrome dependencies
+      # 【修正步驟】：修正 Chrome 依賴庫的名稱 (適用於 Ubuntu 24.04+)
+      - name: 🌐 Install required Chrome dependencies (Ubuntu 24.04 Fix)
         run: |
           sudo apt-get update
-          sudo apt-get install -y libnss3 libgconf-2-4 libasound2 libatk-bridge2.0-0 libgtk-3-0
+          # 移除 libgconf-2-4，並將 libasound2 修正為 libasound2t64
+          # 這些是 Headless Chrome 運行的關鍵系統依賴
+          sudo apt-get install -y libnss3 libasound2t64 libatk-bridge2.0-0 libgtk-3-0
           
       # 3. 安裝 Python 依賴
       - name: ⚙️ Install dependencies (Scraper)
         run: |
+          # 常用工具
           pip install pandas tabulate
+          # 核心爬蟲庫
           pip install undetected-chromedriver selenium
 
       # 4. 運行 Python 爬蟲腳本
       - name: 🏃 Run main.py (Single Run)
-        # 【修正】確定執行檔案是 main.py
         run: python main.py
