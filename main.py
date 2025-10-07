@@ -20,8 +20,8 @@ from selenium.common.exceptions import TimeoutException, NoSuchElementException,
 
 # 這些變數會直接從 GitHub Actions 的 'env:' 區塊或系統環境變數中讀取
 # 建議使用 os.getenv 確保安全性，但在本範例中先直接寫入供測試
-YOUR_USERNAME = os.environ.get("AUCTION_USERNAME", "nyto1201")
-YOUR_ID = os.environ.get("AUCTION_ID", "N225116709") 
+YOUR_USERNAME = os.environ.get("AUCTION_USERNAME")
+YOUR_ID = os.environ.get("AUCTION_ID") 
 
 MAX_RETRIES = 3 
 
@@ -58,7 +58,7 @@ def element_has_non_empty_value(locator):
 
 # ----------------- 核心登入邏輯 (採用 OpenCV 圖像識別點擊) -----------------
 def perform_login(driver):
-    time.sleep(5)
+    time.sleep(7)
     """
     處理 Colorbox 彈出的 Iframe 登入視窗，並執行登入。
     【強化點】：使用 OpenCV 圖像識別定位 Checkbox 並點擊。
@@ -564,17 +564,18 @@ def run_hourly_monitoring_cycle(url: str):
             print(f"[{time.strftime('%H:%M:%S')}] 🔄 正在初始化新的瀏覽器 Driver (第 {attempt}/{MAX_RETRIES} 次重試)...")
             
             options = uc.ChromeOptions()
-            options.add_argument('--no-sandbox')
-            options.add_argument('--disable-dev-shm-usage') 
-            options.add_argument('--disable-gpu')
+            # ... (options.add_argument 省略)
             
-            # 【關鍵優化】：強制設定無頭模式的視窗大小
-            options.add_argument('--window-size=1920,1080') 
-            
-            # 💡 部署時請將 `headless=False` 改為 `headless=True`
-            driver = uc.Chrome(options=options, headless=False, use_subprocess=True) 
+            # 【關鍵修改點】：強制指定 ChromeDriver 版本與現有 Chrome 140 匹配
+            driver = uc.Chrome(
+                options=options, 
+                headless=False, 
+                use_subprocess=True,
+                # === 這裡新增版本參數 ===
+                version_main=140 
+            ) 
             driver.get(url)
-            time.sleep(1) # 縮短延遲，讓 Check 函數立即執行
+            time.sleep(1)
 
             # --------------------- Cloudflare 主頁面檢查 ---------------------
             if not check_main_cloudflare(driver):
@@ -598,7 +599,12 @@ def run_hourly_monitoring_cycle(url: str):
             
         except Exception as e:
             print(f"[{time.strftime('%H:%M:%S')}] ❌ 瀏覽器或登入初始化失敗: {e}")
-            check_and_save_screenshot(driver, "General_Init_Fail", success=False)
+            # 增加檢查：只有 driver 成功初始化（不為 None）時才嘗試截圖
+            if driver: 
+                check_and_save_screenshot(driver, "General_Init_Fail", success=False)
+            else:
+                print(f"[{time.strftime('%H:%M:%S')}] ❌ Driver 為 None，無法截圖。") 
+            
             if attempt < MAX_RETRIES:
                 print(f"[{time.strftime('%H:%M:%S')}] 😥 第 {attempt} 次初始化/登入失敗，正在重試...")
             continue
