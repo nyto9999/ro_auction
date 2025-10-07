@@ -1,5 +1,8 @@
-# 檔案: main.py (已優化為 GitHub Actions 環境)
-
+# 檔案: main.py (包含最終優化的 Iframe Checkbox 處理)
+from selenium.common.exceptions import TimeoutException, NoSuchElementException, WebDriverException
+# 【新增】：匯入圖像識別模組
+import image_click_handler
+from selenium.webdriver.common.action_chains import ActionChains # 用於模擬滑鼠移動和點擊
 from datetime import datetime
 import os
 import undetected_chromedriver as uc
@@ -13,58 +16,35 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException, WebDriverException
 
 
-# ----------------- 環境變數 (直接從 Actions Secrets 讀取) -----------------
+# ----------------- 環境變數 (請替換為您的實際帳號密碼) -----------------
 
 # 這些變數會直接從 GitHub Actions 的 'env:' 區塊或系統環境變數中讀取
-# 確保您已在 Actions YAML 中設定 AUCTION_USERNAME 和 AUCTION_ID
-YOUR_USERNAME = os.getenv("AUCTION_USERNAME") 
-YOUR_ID = os.getenv("AUCTION_ID")
+# 建議使用 os.getenv 確保安全性，但在本範例中先直接寫入供測試
+YOUR_USERNAME = os.environ.get("AUCTION_USERNAME", "nyto1201")
+YOUR_ID = os.environ.get("AUCTION_ID", "N225116709") 
 
-# 【✅ 修正：新增 MAX_RETRIES 常數定義，解決 NameError】
 MAX_RETRIES = 3 
 
-# 檢查變數是否為空，在 Actions 執行時這是必要的安全檢查
 if not YOUR_USERNAME or not YOUR_ID:
     print("🚨 致命錯誤：環境變數 AUCTION_USERNAME 或 AUCTION_ID 未設定。請檢查 GitHub Secrets。")
-    # exit(1) # 在實際部署時建議啟用，但在測試階段先註解
+    # exit(1) # 實際部署時建議啟用
 
-# ----------------- Cloudflare Checkbox 處理邏輯 -----------------
+# ----------------- 偵錯輔助函數 -----------------
 
-def handle_cloudflare_challenge(driver):
+def check_and_save_screenshot(driver, stage_name: str, success: bool = True):
     """
-    偵測並嘗試點擊 Cloudflare 的 "驗證您是人類" Checkbox。
+    自定義截圖函數，用於記錄特定階段的結果。
     """
-    CHECKBOX_LOCATOR = (By.CSS_SELECTOR, "label.cb-lb input[type='checkbox']")
-    CHECKBOX_LABEL_LOCATOR = (By.CLASS_NAME, "cb-lb") # 有時點擊 Label 更有效
-
-    print(f"[{time.strftime('%H:%M:%S')}] 🔍 正在檢查是否有 Cloudflare Checkbox 挑戰...")
-    
+    status = "SUCCESS" if success else "FAIL"
+    filename = f"screenshot_{stage_name}_{status}_{datetime.now().strftime('%H%M%S')}.png"
     try:
-        # 等待 Checkbox 的 Label 元素出現
-        WebDriverWait(driver, 5).until(
-            EC.presence_of_element_located(CHECKBOX_LABEL_LOCATOR)
-        )
-        
-        # 找到 Checkbox 元素
-        checkbox = driver.find_element(*CHECKBOX_LOCATOR)
-        
-        # 點擊它
-        if checkbox.is_displayed() and checkbox.is_enabled():
-            print(f"[{time.strftime('%H:%M:%S')}] ⚠️ 偵測到 Checkbox，正在嘗試點擊...")
-            checkbox.click()
-            time.sleep(5) 
-            print(f"[{time.strftime('%H:%M:%S')}] ✅ Checkbox 點擊完成，等待頁面繼續載入...")
-            return True
-            
-    except TimeoutException:
-        print(f"[{time.strftime('%H:%M:%S')}] ℹ️ 沒有偵測到 Cloudflare Checkbox 挑戰 (Timeout)。繼續執行。")
-        return False
+        driver.get_screenshot_as_file(filename)
+        print(f"[{time.strftime('%H:%M:%S')}] 📸 已保存截圖：{filename}")
     except Exception as e:
-        print(f"[{time.strftime('%H:%M:%S')}] ❌ 點擊 Checkbox 挑戰失敗: {e}")
-        return False
+        print(f"[{time.strftime('%H:%M:%S')}] ❌ 截圖失敗: {e}")
 
+# ----------------- Cloudflare 驗證輔助函數 -----------------
 
-# ----------------- 核心等待邏輯 -----------------
 def element_has_non_empty_value(locator):
     """自定義 EC 條件：等待元素的 'value' 屬性變為非空 (用於 Turnstile Token)。"""
     def _predicate(driver):
@@ -76,14 +56,16 @@ def element_has_non_empty_value(locator):
             return False
     return _predicate
 
-
-# ----------------- 核心登入邏輯-----------------
+# ----------------- 核心登入邏輯 (採用 OpenCV 圖像識別點擊) -----------------
 def perform_login(driver):
-    """處理 Colorbox 彈出的 Iframe 登入視窗，並執行登入。"""
+    time.sleep(5)
+    """
+    處理 Colorbox 彈出的 Iframe 登入視窗，並執行登入。
+    【強化點】：使用 OpenCV 圖像識別定位 Checkbox 並點擊。
+    """
     CLASS_NAME = "cboxIframe" 
-    TURNSTILE_LOCATOR = (By.NAME, "cf-turnstile-response")
+    TURNSTILE_LOCATOR = (By.NAME, "cf-turnstile-response") # Turnstile Token 欄位
 
-    # 如果環境變數為空，直接跳過登入
     if not YOUR_USERNAME or not YOUR_ID:
         print(f"[{time.strftime('%H:%M:%S')}] ❌ 環境變數缺失，無法執行登入。")
         return False
@@ -96,8 +78,40 @@ def perform_login(driver):
         )
         print(f"[{time.strftime('%H:%M:%S')}] ✅ 成功切換到登入 Iframe！")
 
-        # 2. 等待 Turnstile 驗證完成
-        print(f"[{time.strftime('%H:%M:%S')}] ⏳ 等待 Cloudflare Turnstile 完成驗證...")
+        # --------------------- 【重要】OpenCV 圖像識別點擊 ---------------------
+        print(f"[{time.strftime('%H:%M:%S')}] ⏳ 嘗試使用 OpenCV 定位 Checkbox...")
+        
+        # 獲取 Iframe 內 Checkbox 的中心座標 (x, y)
+        click_coords = image_click_handler.locate_checkbox_and_get_center_coords(driver)
+        
+        if click_coords:
+            center_x, center_y = click_coords
+            
+            # 1. 嘗試使用 ActionChains 點擊座標
+            try:
+                actions = ActionChains(driver)
+                # 移動到目標座標 (相對於 Iframe 視口)
+                actions.move_by_offset(center_x, center_y).click().perform()
+                print(f"[{time.strftime('%H:%M:%S')}] ✅ 圖像識別定位點 ({center_x}, {center_y}) 並使用 ActionChains 點擊完成！")
+                
+                # 清理 ActionChains 累積的座標位移
+                actions.reset_actions() 
+                
+            except Exception as e:
+                # 如果 ActionChains 失敗，嘗試使用 JS 強制點擊座標
+                print(f"[{time.strftime('%H:%M:%S')}] ❌ ActionChains 點擊失敗: {e}。嘗試 JS 點擊...")
+                # 這是 Iframe 內最暴力的點擊方式
+                driver.execute_script(f"document.elementFromPoint({center_x}, {center_y}).click();")
+                print(f"[{time.strftime('%H:%M:%S')}] ✅ JS 強制點擊座標完成！")
+            
+            time.sleep(5) # 給予驗證反應時間
+            
+        else:
+            print(f"[{time.strftime('%H:%M:%S')}] ℹ️ 圖像識別未找到 Checkbox，假設是自動 Turnstile 或等待 Token。")
+        # -----------------------------------------------------------------------------------------
+
+        # 2. 等待 Turnstile 驗證完成 (最終 Token 必須出現)
+        print(f"[{time.strftime('%H:%M:%S')}] ⏳ 等待 Cloudflare Turnstile Token 生成...")
         WebDriverWait(driver, 30).until( 
             element_has_non_empty_value(TURNSTILE_LOCATOR)
         )
@@ -127,21 +141,21 @@ def perform_login(driver):
     except Exception as e:
         print(f"[{time.strftime('%H:%M:%S')}] ⚠️ 登入操作失敗！")
         try:
-            driver.switch_to.default_content()
-            driver.get_screenshot_as_file("login_fail_screenshot.png")
-            print(f"[{time.strftime('%H:%M:%S')}] 已保存截圖：login_fail_screenshot.png")
+            # 確保切換回主框架並拍照
+            driver.switch_to.default_content() 
+            check_and_save_screenshot(driver, "Login_Iframe_Fail", success=False)
         except:
             pass
         print(f"[{time.strftime('%H:%M:%S')}] 🚨 登入操作失敗，錯誤訊息: {e}")
         return False
     finally:
         try:
+            # 確保最後切回主框架
             driver.switch_to.default_content()
         except:
             pass
             
-            
-# ----------------- 核心解析與搜尋邏輯-----------------
+# ----------------- 核心解析與搜尋邏輯 (與先前版本一致) -----------------
 
 def parse_shop_results(driver, keyword) -> list:
     """從查詢結果表格中解析當前頁面的資料，並進行嚴格過濾 (item_name == keyword)。"""
@@ -183,7 +197,6 @@ def parse_shop_results(driver, keyword) -> list:
         return items_list
         
     except (NoSuchElementException, Exception):
-        # 找不到表格或其它異常，返回空列表
         return items_list
 
 def perform_search_and_get_page_count(driver, item_keyword: str) -> tuple[list, int]:
@@ -197,7 +210,7 @@ def perform_search_and_get_page_count(driver, item_keyword: str) -> tuple[list, 
         WebDriverWait(driver, 5).until(EC.visibility_of_element_located((By.ID, "div_svr")))
         time.sleep(0.5)
         
-        # 2. 嘗試關閉 SweetAlert2 彈窗
+        # 2. 嘗試關閉 SweetAlert2 彈窗 (如果出現)
         SWEETALERT_OK_BUTTON = (By.CLASS_NAME, "swal2-confirm")
         try:
             ok_button = WebDriverWait(driver, 1).until(EC.element_to_be_clickable(SWEETALERT_OK_BUTTON))
@@ -280,13 +293,19 @@ def scrape_multiple_pages(driver, max_page: int, initial_data: list, item_keywor
     return all_data
 
 
-# ----------------- 數據分析與儲存邏輯-----------------
-
+# ----------------- 數據分析與儲存邏輯 (與先前版本一致) -----------------
 def analyze_and_save_summary(all_data: list, run_timestamp: str):
     """對本次爬取的所有數據進行價格分析，並儲存彙總結果。"""
     
+    data_dir = 'data'
+    # 1. 確保 data 目錄存在 (與主數據儲存邏輯一致)
+    if not os.path.exists(data_dir):
+        os.makedirs(data_dir)
+        
     file_name_prefix = run_timestamp.replace('/', '_').replace(':', '-')
     FILE_NAME = f"{file_name_prefix}_summary.csv"
+    # 2. 修正：將彙總檔案路徑指向 data/
+    FILE_PATH = os.path.join(data_dir, FILE_NAME) 
     
     print(f"\n[{time.strftime('%H:%M:%S')}] 📊 正在對 {len(all_data):,} 筆記錄進行數據分析...")
 
@@ -297,8 +316,8 @@ def analyze_and_save_summary(all_data: list, run_timestamp: str):
     df = pd.DataFrame(records)
     
     if df.empty:
-        print(f"[{time.strftime('%H:%M:%S')}] - ⚠️ 篩選後無可分析數據。")
-        return
+        print(f"[{time.strftime('%H:%M:%M')}] - ⚠️ 篩選後無可分析數據。")
+        return "" # 返回空字串以避免錯誤
 
     df['total_value'] = df['price'] * df['quantity']
     
@@ -346,98 +365,86 @@ def analyze_and_save_summary(all_data: list, run_timestamp: str):
           final_summary[col] = final_summary[col].apply(lambda x: int(round(x)) if x > 0 else 0)
     
     try:
-        final_summary.to_csv(FILE_NAME, index=False, encoding='utf-8') 
-        print(f"[{time.strftime('%H:%M:%S')}] - ✅ 成功將 {len(final_summary)} 筆彙總記錄儲存到 **{FILE_NAME}**。")
+        final_summary.to_csv(FILE_PATH, index=False, encoding='utf-8') 
+        print(f"[{time.strftime('%H:%M:%S')}] - ✅ 成功將 {len(final_summary)} 筆彙總記錄儲存到 **{FILE_PATH}**。")
     except Exception as e:
         print(f"[{time.strftime('%H:%M:%S')}] - ❌ 儲存彙總檔案失敗: {e}")
 
     print("\n--- 本次彙總結果 (僅限純淨道具) ---")
     print(final_summary.to_markdown(index=False, floatfmt=".0f"))
     print("----------------------------------\n")
+    
+    return f"本次爬蟲總計 {len(records)} 筆記錄。"
 
-# ----------------- Git 自動推送邏輯 -----------------
 def auto_git_push(commit_message):
-    """執行 git add, commit, pull (rebase), 和 push，將新的 CSV 數據上傳到 GitHub。"""
+    """執行 Git 操作來推送新的 CSV 文件 (已精簡)"""
+    print(f"[{time.strftime('%H:%M:%S')}] >>> 執行 Git 自動推送 (Add -> Commit -> Pull Rebase -> Push)...")
     
-    stash_popped = False 
+    # Git 操作列表，成功時返回 True
+    def run_git_command(command, error_msg):
+        try:
+            result = subprocess.run(command, check=True, capture_output=True, text=True)
+            if command[1] == 'pull' and "Fast-forward" not in result.stdout and "Already up to date" not in result.stdout:
+                # 如果 Pull Rebase 成功，但有實際合併內容時的提示
+                print(f"[{time.strftime('%H:%M:%S')}] ℹ️ Git Pull Rebase 成功，合併了遠端變更。")
+            return True, result.stdout
+        except subprocess.CalledProcessError as e:
+            print(f"[{time.strftime('%H:%M:%S')}] ⚠️ {error_msg} 失敗。")
+            print(f"[{time.strftime('%H:%M:%S')}] 錯誤輸出: {e.stderr.strip()}")
+            return False, e.stderr
+        except FileNotFoundError:
+            print(f"[{time.strftime('%H:%M:%S')}] ❌ Git 指令未找到。請確保 Git 已安裝並在 PATH 中。")
+            return False, "Git command not found"
+
+    commit_success = False
+
+    # 1. Add all changes: Use 'git add -A' to stage all modified, deleted, and new files (包括 data/ 和可能的診斷文件).
+    # 修正：確保所有已修改或新建立的文件都被加入暫存區，以清理工作目錄。
+    if not run_git_command(['git', 'add', '-A'], "Add 所有變更 (包括 data/ 和可能的診斷文件)")[0]:
+        return False
+        
+    # 2. Commit
+    # 執行提交並檢查輸出結果，以判斷是否有實際變更被提交
+    commit_result = subprocess.run(['git', 'commit', '-m', commit_message], capture_output=True, text=True)
     
-    try:
-        print("\n>>> 執行 Git 自動推送 (Stash -> Add CSV -> Commit -> Pull/Rebase -> Push -> Pop)...")
+    if commit_result.returncode == 0:
+        print(f"[{time.strftime('%H:%M:%S')}] ✅ 本地提交完成。")
+        commit_success = True
+    elif "nothing to commit" in commit_result.stdout:
+        print(f"[{time.strftime('%H:%M:%S')}] ℹ️ 本次沒有新的數據變更需要提交。")
+        commit_success = False # 雖然沒有提交，但我們仍需要 Pull 來更新 Plot
+    else:
+        print(f"[{time.strftime('%H:%M:%S')}] ⚠️ 本地提交失敗。")
+        print(f"[{time.strftime('%H:%M:%S')}] 錯誤輸出: {commit_result.stderr.strip()}")
+        return False
         
-        # 0. 檢查並暫存所有未提交/未追蹤的變更 (包含新的 CSV 文件)
-        stash_result = subprocess.run(
-            ['git', 'stash', 'push', '--include-untracked', '-m', 'SCRAPER_TEMP_STASH'],
-            check=False,
-            capture_output=True
-        )
-        # 檢查 stdout 來判斷是否真的有東西被 Stash
-        if b'No local changes to save' not in stash_result.stdout:
-            print("✅ 偵測到並成功暫存 (Stash) 工作目錄變更 (包括新 CSV)。")
-            stash_popped = True
-        else:
-            print("ℹ️ 工作目錄乾淨。無需暫存。")
-        
-        # 1. 恢復暫存的變更。目的：將新生成的 CSV 文件拉出來，以便被 git add 和 commit 捕獲。
-        if stash_popped:
-            subprocess.run(['git', 'stash', 'apply', '--index'], check=True, capture_output=True)
-            print("✅ 已恢復暫存的變更到工作區。")
+    # 3. Pull/Rebase 遠端變更 (始終執行，以拉取 Plot 檔案)
+    # 現在工作目錄應該是乾淨的，Pull Rebase 不會被 unstaged changes 阻擋。
+    print(f"[{time.strftime('%H:%M:%S')}] 🔍 正在拉取遠端最新變更 (git pull --rebase origin main)...")
+    if not run_git_command(['git', 'pull', '--rebase', 'origin', 'main'], "Git Pull Rebase")[0]:
+        # 如果 Rebase 失敗，通常是權限或衝突。
+        print(f"[{time.strftime('%H:%M:%S')}] ⚠️ Git Pull Rebase 失敗，請檢查 Git 認證或是否有衝突需要解決。")
+        return False
 
-        # 2. Add 所有 CSV (這是您新生成的檔案)
-        subprocess.run(['git', 'add', '*.csv'], check=True, capture_output=True)
+    # 4. Push 變更 (如果成功提交，或者 Pull 動作本身導致了 Rebase)
+    if commit_success:
+        if not run_git_command(['git', 'push', 'origin', 'main'], "Git Push")[0]:
+            print(f"[{time.strftime('%H:%M:%S')}] ❌ Git Push 失敗。請檢查遠端狀態。")
+            return False
+        print(f"[{time.strftime('%H:%M:%S')}] 🎉 Git Push 成功完成。")
         
-        # 3. Commit (只有在有變更時才執行)
-        commit_result = subprocess.run(
-            ['git', 'commit', '-m', commit_message], 
-            check=False, 
-            capture_output=True
-        )
-        
-        if commit_result.returncode != 0 and b'nothing to commit' in commit_result.stdout:
-            print("ℹ️ 無新的 CSV 變更需要提交。跳過 Pull 和 Push。")
-            # 如果沒有提交，但有 Stash，我們需要清理並恢復
-            if stash_popped:
-                subprocess.run(['git', 'stash', 'pop', '--index'], check=True, capture_output=True)
-                print("✅ 已清理暫存的變更。")
-            return
-            
-        print("✅ 本地提交完成。")
-        
-        # 4. Pull (Rebase)
-        print("🔍 正在拉取遠端最新變更 (git pull --rebase)...")
-        # 假設您的 Actions 使用的是 GITHUB_TOKEN，預設拉取/推送 main
-        subprocess.run(['git', 'pull', '--rebase', 'origin', 'main'], check=True, capture_output=True)
-        print("✅ 遠端同步完成。")
-        
-        # 5. Push
-        subprocess.run(['git', 'push', 'origin', 'main'], check=True, capture_output=True)
-        print("🎉 Git 操作成功：最新 CSV 數據已推送至 GitHub。")
-        
-        # 6. 清理並恢復暫存的變更（如果有的話）
-        if stash_popped:
-            subprocess.run(['git', 'stash', 'drop'], check=True, capture_output=True)
-            print("✅ 已清理暫存的變更。")
+    elif not commit_success:
+        print(f"[{time.strftime('%H:%M:%S')}] ℹ️ 無新數據提交，Pull 已完成遠端 Plot 更新。Push 步驟跳過。")
+    
+    return True
 
-
-    except subprocess.CalledProcessError as e:
-        # 在失敗時，檢查並恢復原始的 Stash 變更
-        if stash_popped:
-            try:
-                subprocess.run(['git', 'stash', 'pop', '--index'], check=False, capture_output=True)
-                print("⚠️ Git 操作失敗，但已嘗試恢復暫存的變更。")
-            except:
-                pass
-                
-        print(f"❌ Git 操作失敗，請檢查您的 Git 環境或認證：")
-    except FileNotFoundError:
-        print("❌ 找不到 Git 命令。請確保您的系統已安裝 Git。")
-
-# ----------------- 單次排程任務核心邏輯 -----------------
+# ----------------- 單次排程任務核心邏輯 (與先前版本一致) -----------------
 def run_scraping_task(driver, SEARCH_ITEMS, run_timestamp_for_file):
     """執行所有關鍵字的爬蟲和數據處理。"""
     
     print("\n" + "="*80)
     print(" " * 28 + "【爬蟲任務開始】")
-    print(f" " * 28 + f"【排程時間戳: {run_timestamp_for_file}】")
+    print(" " * 28 + f"【排程時間戳: {run_timestamp_for_file}】")
     print("="*80)
 
     all_data_for_summary: list = []
@@ -469,12 +476,10 @@ def run_scraping_task(driver, SEARCH_ITEMS, run_timestamp_for_file):
         if total_records > 0:
             analyze_and_save_summary(all_data_for_summary, run_timestamp_for_file)
             
-            # *** 自動 Git 推送最新 CSV ***
             timestamp_for_commit = datetime.now().strftime("%Y-%m-%d %H:%M")
             commit_msg = f"Hourly data update (CSV) via scraper: {timestamp_for_commit}"
             
             auto_git_push(commit_msg)
-            # *******************************
             
         else:
             print(f"[{time.strftime('%H:%M:%S')}] ⚠️ 本次排程沒有爬取到任何記錄，跳過數據分析。")
@@ -491,20 +496,64 @@ def run_scraping_task(driver, SEARCH_ITEMS, run_timestamp_for_file):
         return True
 
 
-# ----------------- 主流程-----------------
+# ----------------- 主流程 (含 Driver 初始化優化和 Cloudflare 檢查) -----------------
+
+def check_main_cloudflare(driver) -> bool:
+    """
+    檢查主頁面是否卡在 Cloudflare 驗證。
+    如果偵測到 Turnstile Iframe，則等待 20 秒讓其自動通過。
+    """
+    TURNSTILE_IFRAME_LOCATOR = (By.CSS_SELECTOR, 'iframe[src*="cloudflare"]')
+    
+    try:
+        # 等待 Turnstile Iframe 出現 (給予 5 秒確認時間)
+        WebDriverWait(driver, 5).until(
+            EC.presence_of_element_located(TURNSTILE_IFRAME_LOCATOR)
+        )
+        print(f"[{time.strftime('%H:%M:%S')}] 🚨 偵測到 Cloudflare Turnstile 主頁面驗證！")
+        check_and_save_screenshot(driver, "Main_CF_Start", success=False)
+        
+        # 切換到 Iframe 等待 Token 出現 (通常會自動完成)
+        WebDriverWait(driver, 20).until(
+            EC.frame_to_be_available_and_switch_to_it(TURNSTILE_IFRAME_LOCATOR)
+        )
+        
+        # 這是 Turnstile Iframe 內的 Token 欄位
+        TURNSTILE_RESPONSE_LOCATOR = (By.NAME, "cf-turnstile-response") 
+        WebDriverWait(driver, 10).until(
+            element_has_non_empty_value(TURNSTILE_RESPONSE_LOCATOR)
+        )
+        
+        driver.switch_to.default_content()
+        print(f"[{time.strftime('%H:%M:%S')}] ✅ Cloudflare Turnstile 自動驗證通過。")
+        check_and_save_screenshot(driver, "Main_CF_Success", success=True)
+        return True # 表示驗證已完成
+        
+    except TimeoutException:
+        # 如果 5 秒內沒有偵測到 Iframe，或者 20 秒內沒有通過驗證
+        driver.switch_to.default_content() # 確保切回主框架
+        current_title = driver.title
+        
+        if "Just a moment" in current_title or "Cloudflare" in current_title:
+             print(f"[{time.strftime('%H:%M:%S')}] ❌ 主頁面驗證失敗或超時，標題: {current_title[:30]}...")
+             check_and_save_screenshot(driver, "Main_CF_Failure", success=False)
+             return False # 主頁面驗證失敗
+        else:
+             print(f"[{time.strftime('%H:%M:%S')}] ℹ️ 主頁面未發現 Cloudflare 驗證，繼續下一步。")
+             return True # 頁面似乎是正常的，繼續
 
 def run_hourly_monitoring_cycle(url: str):
     """
     執行一次初始化 Driver -> 登入 -> 爬蟲 -> 關閉 Driver。
     """
-    SEARCH_ITEMS = ["鋁", "大嘴鳥卡片", "神之金屬"] 
+    SEARCH_ITEMS = ["大嘴鳥卡片"] 
     
     login_success = False 
     driver = None
     
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            # 清理舊 Driver 邏輯 (如果之前失敗，嘗試在重試前關閉舊實例)
+            # 清理舊 Driver 邏輯
             if driver:
                 try:
                     driver.quit()
@@ -514,29 +563,34 @@ def run_hourly_monitoring_cycle(url: str):
 
             print(f"[{time.strftime('%H:%M:%S')}] 🔄 正在初始化新的瀏覽器 Driver (第 {attempt}/{MAX_RETRIES} 次重試)...")
             
-            # 【重要修正】：新增無頭模式和必要的參數
             options = uc.ChromeOptions()
-            options.add_argument('--no-sandbox')         # 消除沙箱模式的權限問題 (Linux 必需)
-            options.add_argument('--headless')           # 強制無頭模式 (避免圖形界面依賴)
-            options.add_argument('--disable-dev-shm-usage') # 解決 Linux 內存問題
-            options.add_argument('--disable-gpu')        # 禁用 GPU 加速
+            options.add_argument('--no-sandbox')
+            options.add_argument('--disable-dev-shm-usage') 
+            options.add_argument('--disable-gpu')
             
-            # 使用修正後的 options 初始化 Driver
-            driver = uc.Chrome(options=options)
+            # 【關鍵優化】：強制設定無頭模式的視窗大小
+            options.add_argument('--window-size=1920,1080') 
+            
+            # 💡 部署時請將 `headless=False` 改為 `headless=True`
+            driver = uc.Chrome(options=options, headless=False, use_subprocess=True) 
             driver.get(url)
-            time.sleep(3) 
+            time.sleep(1) # 縮短延遲，讓 Check 函數立即執行
 
-            # --------------------- Cloudflare Checkbox 處理步驟 ---------------------
-            handle_cloudflare_challenge(driver)
-            # -------------------------------------------------------------------------
+            # --------------------- Cloudflare 主頁面檢查 ---------------------
+            if not check_main_cloudflare(driver):
+                 # 如果主頁面驗證失敗，則中斷本次嘗試並重試
+                 continue 
+            # ------------------------------------------------------------------
 
-            # 點擊登入連結並執行登入 (這裡的 ID 'a_searchBtn' 似乎同時是登入連結和查詢按鈕)
+            # 點擊登入連結並執行登入 (這裡會觸發 Iframe 彈出)
             LOGIN_LINK_ID = "a_searchBtn"
-            login_link = WebDriverWait(driver, 20).until(EC.element_to_be_clickable((By.ID, LOGIN_LINK_ID)))
+            # 必須等待登入按鈕出現 (表示主頁面載入成功)
+            login_link = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.ID, LOGIN_LINK_ID)))
             login_link.click()
-            login_success = perform_login(driver)
+            login_success = perform_login(driver) # 進入 perform_login 處理 Iframe 內的驗證
             
             if login_success:
+                check_and_save_screenshot(driver, "Login_Main_Page_Success", success=True)
                 break
                 
             if attempt < MAX_RETRIES:
@@ -544,8 +598,10 @@ def run_hourly_monitoring_cycle(url: str):
             
         except Exception as e:
             print(f"[{time.strftime('%H:%M:%S')}] ❌ 瀏覽器或登入初始化失敗: {e}")
+            check_and_save_screenshot(driver, "General_Init_Fail", success=False)
             if attempt < MAX_RETRIES:
-                 print(f"[{time.strftime('%H:%M:%S')}] 😥 第 {attempt} 次初始化/登入失敗，正在重試...")
+                print(f"[{time.strftime('%H:%M:%S')}] 😥 第 {attempt} 次初始化/登入失敗，正在重試...")
+            continue
 
 
     if login_success and driver:
@@ -569,10 +625,10 @@ def run_hourly_monitoring_cycle(url: str):
 if __name__ == '__main__':
     target_url = "https://event.gnjoy.com.tw/RoZ/RoZ_ShopSearch" 
     print("==============================================")
-    print("       🎉 爬蟲測試程式已啟動 (單次執行) 🎉")
+    print("           🎉 爬蟲測試程式已啟動 (單次執行) 🎉")
     print("==============================================")
     # 執行一次任務
     run_hourly_monitoring_cycle(target_url) 
     print("==============================================")
-    print("           ✨ 任務執行完畢，程式結束。 ✨")
+    print("             ✨ 任務執行完畢，程式結束。 ✨")
     print("==============================================")

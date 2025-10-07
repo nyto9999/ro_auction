@@ -27,21 +27,21 @@ jobs:
       - name: ⬇️ Checkout repository code
         uses: actions/checkout@v4
         with:
-          # 使用 GITHUB_TOKEN 進行身份驗證，以便後續的 Git Push 操作
           token: ${{ secrets.GITHUB_TOKEN }} 
 
       # 2. 設定 Python 環境
       - name: 🐍 Set up Python
         uses: actions/setup-python@v5
         with:
-          # 將版本固定在 3.11，避免與某些爬蟲庫產生相容性問題
           python-version: '3.11' 
 
-      # 【修正步驟】：修正 Chrome 依賴庫的名稱 (適用於 Ubuntu 24.04+)
-      - name: 🌐 Install required Chrome dependencies (Ubuntu 24.04 Fix)
+      # 【修正步驟】：安裝 Chrome 依賴、OpenCV 依賴和 Xvfb
+      - name: 🌐 Install required Chrome dependencies & Xvfb
         run: |
           sudo apt-get update
-          # 移除 libgconf-2-4，並將 libasound2 修正為 libasound2t64
+          # 安裝 Xvfb (虛擬顯示緩衝區) 以支援 headless=False
+          sudo apt-get install -y xvfb
+          # 修正 Chrome 依賴庫的名稱 (適用於 Ubuntu 24.04+)
           sudo apt-get install -y libnss3 libasound2t64 libatk-bridge2.0-0 libgtk-3-0
           
       # 3. 安裝 Python 依賴
@@ -51,7 +51,10 @@ jobs:
           pip install pandas tabulate
           # 核心爬蟲庫
           pip install undetected-chromedriver selenium
-
+          # 圖像識別所需套件 (OpenCV, Pillow)
+          pip install opencv-python Pillow
+          
       # 4. 運行 Python 爬蟲腳本
       - name: 🏃 Run main.py (Single Run)
-        run: python main.py
+        # 使用 xvfb-run 啟動虛擬顯示器，讓 headless=False 能成功運行
+        run: xvfb-run --auto-servernum python main.py
