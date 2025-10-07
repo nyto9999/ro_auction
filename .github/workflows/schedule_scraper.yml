@@ -1,7 +1,6 @@
 name: 🕷️ Hourly RO Scraper
 
 # 設定觸發器：每小時的 0 分鐘執行 (例如 01:00, 02:00, ...) 
-# 注意：這與您繪圖 Action 的 05 分錯開，避免同時推送。
 on:
   schedule:
     # CRON 語法：'0 * * * *' 代表在每個小時的 0 分鐘執行 (UTC 時間)
@@ -35,20 +34,16 @@ jobs:
       - name: 🐍 Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.x'
+          # 【重要修正】將版本固定在 3.11，避免 Python 3.12+ 缺少 distutils 模組的錯誤。
+          python-version: '3.11' 
 
-      # 3. 安裝 Python 依賴 (只保留腳本中實際使用的庫)
+      # 3. 安裝 Python 依賴
       - name: ⚙️ Install dependencies (Scraper)
         run: |
-          # pandas 用於數據分析，tabulate 用於打印 Markdown 表格
           pip install pandas tabulate
-          # selenium 和 undetected-chromedriver 用於瀏覽器自動化
           pip install undetected-chromedriver selenium
 
       # 4. 運行 Python 爬蟲腳本
       - name: 🏃 Run main.py (Single Run)
-        # 由於 main_scraper.py 已經包含 Git 推送邏輯，這裡只需執行它
+        # 【修正】確定執行檔案是 main.py
         run: python main.py
-        
-      # 注意：這裡不需要額外的 git-auto-commit-action，因為 main_scraper.py 
-      # 內建的 auto_git_push 函數會處理 CSV 檔案的提交和推送到 main 分支。
