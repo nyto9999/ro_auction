@@ -1,4 +1,4 @@
-# 檔案: main_scraper.py (已優化為 GitHub Actions 環境)
+# 檔案: main.py (已優化為 GitHub Actions 環境)
 
 from datetime import datetime
 import os
@@ -20,10 +20,12 @@ from selenium.common.exceptions import TimeoutException, NoSuchElementException,
 YOUR_USERNAME = os.getenv("AUCTION_USERNAME") 
 YOUR_ID = os.getenv("AUCTION_ID")
 
+# 【✅ 修正：新增 MAX_RETRIES 常數定義，解決 NameError】
+MAX_RETRIES = 3 
+
 # 檢查變數是否為空，在 Actions 執行時這是必要的安全檢查
 if not YOUR_USERNAME or not YOUR_ID:
     print("🚨 致命錯誤：環境變數 AUCTION_USERNAME 或 AUCTION_ID 未設定。請檢查 GitHub Secrets。")
-    # 在非 Actions 環境下，可能需要加載 .env 來測試，但這裡保持乾淨版本
     # exit(1) # 在實際部署時建議啟用，但在測試階段先註解
 
 # ----------------- Cloudflare Checkbox 處理邏輯 -----------------
@@ -138,7 +140,7 @@ def perform_login(driver):
         except:
             pass
             
-
+            
 # ----------------- 核心解析與搜尋邏輯-----------------
 
 def parse_shop_results(driver, keyword) -> list:
@@ -426,9 +428,6 @@ def auto_git_push(commit_message):
                 pass
                 
         print(f"❌ Git 操作失敗，請檢查您的 Git 環境或認證：")
-        # 打印錯誤輸出，方便調試
-        # print(f"STDOUT:\n{e.stdout.decode()}")
-        # print(f"STDERR:\n{e.stderr.decode()}")
     except FileNotFoundError:
         print("❌ 找不到 Git 命令。請確保您的系統已安裝 Git。")
 
@@ -500,12 +499,20 @@ def run_hourly_monitoring_cycle(url: str):
     """
     SEARCH_ITEMS = ["鋁", "大嘴鳥卡片", "神之金屬"] 
     
-    # ... (初始化和重試邏輯) ...
+    login_success = False 
+    driver = None
+    
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            # ... (清理舊 Driver 邏輯) ...
-            
-            print(f"[{time.strftime('%H:%M:%S')}] 🔄 正在初始化新的瀏覽器 Driver...")
+            # 清理舊 Driver 邏輯 (如果之前失敗，嘗試在重試前關閉舊實例)
+            if driver:
+                try:
+                    driver.quit()
+                except Exception:
+                    pass
+                driver = None
+
+            print(f"[{time.strftime('%H:%M:%S')}] 🔄 正在初始化新的瀏覽器 Driver (第 {attempt}/{MAX_RETRIES} 次重試)...")
             
             # 【重要修正】：新增無頭模式和必要的參數
             options = uc.ChromeOptions()
@@ -544,8 +551,6 @@ def run_hourly_monitoring_cycle(url: str):
     if login_success and driver:
         # 3. 執行任務
         now = datetime.now()
-        # 注意：這裡的strftime格式需要根據您實際的系統/環境來調整，以確保與您原來的效果一致
-        # '%#m' 和 '%#d' 在某些系統 (如 Linux/GitHub Actions) 上可能無法工作，但這裡保持原樣
         run_timestamp_for_file = now.strftime('%Y/%m/%d/%H') 
         run_scraping_task(driver, SEARCH_ITEMS, run_timestamp_for_file) 
     else:
@@ -564,10 +569,10 @@ def run_hourly_monitoring_cycle(url: str):
 if __name__ == '__main__':
     target_url = "https://event.gnjoy.com.tw/RoZ/RoZ_ShopSearch" 
     print("==============================================")
-    print("      🎉 爬蟲測試程式已啟動 (單次執行) 🎉")
+    print("       🎉 爬蟲測試程式已啟動 (單次執行) 🎉")
     print("==============================================")
     # 執行一次任務
     run_hourly_monitoring_cycle(target_url) 
     print("==============================================")
-    print("           ✨ 任務執行完畢，程式結束。 ✨")
+    print("           ✨ 任務執行完畢，程式結束。 ✨")
     print("==============================================")

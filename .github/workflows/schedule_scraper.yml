@@ -42,7 +42,6 @@ jobs:
         run: |
           sudo apt-get update
           # 移除 libgconf-2-4，並將 libasound2 修正為 libasound2t64
-          # 這些是 Headless Chrome 運行的關鍵系統依賴
           sudo apt-get install -y libnss3 libasound2t64 libatk-bridge2.0-0 libgtk-3-0
           
       # 3. 安裝 Python 依賴
